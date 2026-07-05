@@ -105,7 +105,7 @@ the above process.
   With the feature off, `Format::V2JSON` is not compiled and
   `Macaroon::deserialize` returns `DeserializationError` on a token that
   starts with `{`.
-- `wasm` — enables `getrandom`'s `js` backend so the crate works on
+- `wasm` — enables `getrandom`'s `wasm_js` backend so the crate works on
   `wasm32-unknown-unknown` in browser/Node hosts.
 
 ### Examples
@@ -270,14 +270,15 @@ same backend works for both native and WASM targets.
 
 ### Feature Flags
 
-- `wasm` - Enable WASM-compatible random number generation via `getrandom/js`
+- `wasm` - Enable WASM-compatible random number generation via `getrandom/wasm_js`
 
 ## Minimum Supported Rust Version
 
 This crate targets Rust Language 2021 Edition and builds on stable Rust
-1.71 (Jul 2023) and later. The library build (`cargo build`) is the
-contract; `cargo test` pulls in dev-dep transitives that require newer
-editions and isn't part of the MSRV guarantee.
+1.85 (Feb 2025) and later — the floor set by `getrandom` 0.4, which
+requires Edition 2024 to compile. The library build (`cargo build`) is
+the contract; `cargo test` pulls in dev-dep transitives that require
+newer editions and isn't part of the MSRV guarantee.
 
 MSRV bumps are not considered breaking for 0.x, but we only bump when
 needed, and only to land bug fixes or to keep transitive deps on

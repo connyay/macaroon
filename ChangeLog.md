@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- **`getrandom` bumped from 0.2 to 0.4.** The `wasm` feature now enables
+  `getrandom/wasm_js` (renamed from `getrandom/js`); no source change is
+  needed for consumers since the feature name is internal to this
+  crate's `Cargo.toml`. `getrandom` 0.4 requires Edition 2024, which
+  raises this crate's MSRV from 1.71 to **1.85**.
+
 Hardening from a code-review pass over the serializers. No wire-format
 changes for well-formed tokens; all fixes reject inputs or outputs that
 were previously mishandled.

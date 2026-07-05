@@ -129,11 +129,11 @@ impl RustCryptoBackend {
 
     fn fill_random(buf: &mut [u8]) -> Result<()> {
         // `getrandom` works on both native (via OS RNG) and
-        // wasm32-unknown-unknown with the `js` feature enabled (via
+        // wasm32-unknown-unknown with the `wasm_js` feature enabled (via
         // `crypto.getRandomValues`). A failure here is propagated up instead
         // of aborting, which matters on WASM: a sandboxed iframe with no
         // `crypto` global would otherwise crash the whole module.
-        getrandom::getrandom(buf).map_err(|_| MacaroonError::RngError("getrandom failed"))
+        getrandom::fill(buf).map_err(|_| MacaroonError::RngError("getrandom failed"))
     }
 }
 

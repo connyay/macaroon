@@ -2,7 +2,7 @@
 name = "libmacaroon"
 version = "0.2.1"
 edition = "2021"
-rust-version = "1.71"
+rust-version = "1.85"
 authors = [
     "Connor Hindley <conn.hindley@gmail.com>",
     "Jack Lund <jackl@geekheads.net>",
@@ -19,7 +19,7 @@ license = "MIT"
 
 [features]
 default = ["v2json"]
-wasm = ["getrandom/js"]
+wasm = ["getrandom/wasm_js"]
 # Enables the V2JSON serialization format. Pulls in `serde` (with derives)
 # and `serde_json`. Disable with `default-features = false` to drop the
 # JSON deserializer (~50 KB of compiled code) when only the binary V1/V2
@@ -36,14 +36,14 @@ base64 = "0.22"
 hmac = "0.12"
 sha2 = "0.10"
 crypto_secretbox = { version = "0.1", default-features = false, features = ["alloc", "salsa20"] }
-getrandom = "0.2"
+getrandom = "0.4"
 subtle = "2.6"
 zeroize = { version = "1.8", features = ["derive"] }
 
-# proptest pulls in rand 0.9 -> getrandom 0.3, which needs a different
-# wasm32 configuration than the getrandom 0.2 we use directly. Cargo
-# includes dev-dependencies when building examples, so the WASM example
-# build would fail on that mismatch. The property tests don't run on
-# wasm32 targets anyway — scope them to everything else.
+# proptest pulls in rand 0.9 -> getrandom 0.3, a different major version
+# than the getrandom 0.4 we use directly, with its own (unset) wasm32
+# backend. Cargo includes dev-dependencies when building examples, so the
+# WASM example build would fail on that mismatch. The property tests don't
+# run on wasm32 targets anyway — scope them to everything else.
 [target.'cfg(not(target_arch = "wasm32"))'.dev-dependencies]
 proptest = "1"
