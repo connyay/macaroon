@@ -105,6 +105,10 @@ impl CaveatBuilder {
         self.verifier_id = Some(vid);
     }
 
+    pub(crate) fn has_verifier_id(&self) -> bool {
+        self.verifier_id.is_some()
+    }
+
     pub(crate) fn add_location(&mut self, location: String) {
         self.location = Some(location);
     }

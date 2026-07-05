@@ -15,55 +15,62 @@ const VID: &str = "vid";
 const CL: &str = "cl";
 
 const HEADER_SIZE: usize = 4;
+// The four-hex-digit size header covers the whole packet, including itself.
+const MAX_PACKET_SIZE: usize = 0xFFFF;
 
-fn serialize_as_packet<'r>(tag: &'r str, value: &'r [u8]) -> Vec<u8> {
-    let mut packet: Vec<u8> = Vec::new();
+fn serialize_as_packet<'r>(tag: &'r str, value: &'r [u8]) -> Result<Vec<u8>> {
     let size = HEADER_SIZE + 2 + tag.len() + value.len();
+    // The size header would otherwise wrap silently past 0xFFFF and emit a
+    // corrupt token. Reachable only for fields within `tag.len() + 6` bytes
+    // of MAX_FIELD_SIZE_BYTES, which V2/V2JSON can serialize but V1 cannot.
+    if size > MAX_PACKET_SIZE {
+        return Err(MacaroonError::FieldTooLarge {
+            field: "v1 packet",
+            size,
+        });
+    }
+    let mut packet: Vec<u8> = Vec::new();
     packet.extend(packet_header(size));
     packet.extend_from_slice(tag.as_bytes());
     packet.extend_from_slice(b" ");
     packet.extend_from_slice(value);
     packet.extend_from_slice(b"\n");
 
-    packet
+    Ok(packet)
 }
 
-fn to_hex_char(value: u8) -> u8 {
-    let hex = format!("{:1x}", value);
-    hex.as_bytes()[0]
-}
-
-fn packet_header(size: usize) -> Vec<u8> {
-    vec![
-        to_hex_char(((size >> 12) & 15) as u8),
-        to_hex_char(((size >> 8) & 15) as u8),
-        to_hex_char(((size >> 4) & 15) as u8),
-        to_hex_char((size & 15) as u8),
+fn packet_header(size: usize) -> [u8; 4] {
+    const HEX: &[u8; 16] = b"0123456789abcdef";
+    [
+        HEX[(size >> 12) & 15],
+        HEX[(size >> 8) & 15],
+        HEX[(size >> 4) & 15],
+        HEX[size & 15],
     ]
 }
 
 pub fn serialize_binary(macaroon: &Macaroon) -> Result<Vec<u8>> {
     let mut serialized: Vec<u8> = Vec::new();
     if let Some(location) = macaroon.location() {
-        serialized.extend(serialize_as_packet(LOCATION, location.as_bytes()));
+        serialized.extend(serialize_as_packet(LOCATION, location.as_bytes())?);
     };
-    serialized.extend(serialize_as_packet(IDENTIFIER, macaroon.identifier()));
+    serialized.extend(serialize_as_packet(IDENTIFIER, macaroon.identifier())?);
     for c in macaroon.caveats() {
         match c {
             Caveat::FirstParty(fp) => {
-                serialized.extend(serialize_as_packet(CID, fp.predicate()));
+                serialized.extend(serialize_as_packet(CID, fp.predicate())?);
             }
             Caveat::ThirdParty(tp) => {
-                serialized.extend(serialize_as_packet(CID, tp.id()));
-                serialized.extend(serialize_as_packet(VID, tp.verifier_id()));
-                serialized.extend(serialize_as_packet(CL, tp.location().as_bytes()))
+                serialized.extend(serialize_as_packet(CID, tp.id())?);
+                serialized.extend(serialize_as_packet(VID, tp.verifier_id())?);
+                serialized.extend(serialize_as_packet(CL, tp.location().as_bytes())?)
             }
         }
     }
     serialized.extend(serialize_as_packet(
         SIGNATURE,
         macaroon.signature().as_ref(),
-    ));
+    )?);
     Ok(serialized)
 }
 
@@ -131,15 +138,39 @@ fn split_index(packet: &[u8]) -> Result<usize> {
 pub fn deserialize(data: &[u8]) -> Result<Macaroon> {
     let mut builder: MacaroonBuilder = MacaroonBuilder::new();
     let mut caveat_builder: CaveatBuilder = CaveatBuilder::new();
+    let mut seen_location = false;
+    let mut seen_identifier = false;
+    let mut seen_signature = false;
     for packet in deserialize_as_packets(data)? {
+        // The signature must be the last packet: anything after it would be
+        // silently dropped otherwise, letting one token have several byte
+        // representations (and other implementations parse it differently).
+        if seen_signature {
+            return Err(MacaroonError::DeserializationError(String::from(
+                "packet found after signature",
+            )));
+        }
         match packet.key.as_str() {
             LOCATION => {
+                if seen_location {
+                    return Err(MacaroonError::DeserializationError(String::from(
+                        "duplicate location packet",
+                    )));
+                }
+                seen_location = true;
                 builder.set_location(&String::from_utf8(packet.value)?);
             }
             IDENTIFIER => {
+                if seen_identifier {
+                    return Err(MacaroonError::DeserializationError(String::from(
+                        "duplicate identifier packet",
+                    )));
+                }
+                seen_identifier = true;
                 builder.set_identifier(ByteString(packet.value));
             }
             SIGNATURE => {
+                seen_signature = true;
                 if caveat_builder.has_id() {
                     builder.add_caveat(caveat_builder.build()?)?;
                     caveat_builder = CaveatBuilder::new();
@@ -167,9 +198,21 @@ pub fn deserialize(data: &[u8]) -> Result<Macaroon> {
                 }
             }
             VID => {
+                if caveat_builder.has_verifier_id() {
+                    return Err(MacaroonError::DeserializationError(String::from(
+                        "duplicate vid packet in caveat",
+                    )));
+                }
                 caveat_builder.add_verifier_id(ByteString(packet.value));
             }
-            CL => caveat_builder.add_location(String::from_utf8(packet.value)?),
+            CL => {
+                if caveat_builder.has_location() {
+                    return Err(MacaroonError::DeserializationError(String::from(
+                        "duplicate cl packet in caveat",
+                    )));
+                }
+                caveat_builder.add_location(String::from_utf8(packet.value)?)
+            }
             _ => {
                 return Err(MacaroonError::DeserializationError(String::from(
                     "Unknown key",
@@ -273,6 +316,72 @@ mod tests {
         let serialized = macaroon.serialize(super::super::Format::V1).unwrap();
         let deserialized = Macaroon::deserialize(&serialized).unwrap();
         assert_eq!(macaroon, deserialized);
+    }
+
+    #[test]
+    fn test_max_field_size_roundtrips() {
+        // The packet header caps a packet at 0xFFFF bytes, so the largest
+        // predicate a V1 `cid` packet can carry is 0xFFFF - 4 - "cid" - 2
+        // = 65526 bytes (this matches pymacaroons' maximum). That must
+        // round-trip; one byte more must fail loudly at serialize time
+        // instead of emitting a corrupt token.
+        const MAX_V1_PREDICATE: usize = 0xFFFF - super::HEADER_SIZE - 2 - 3;
+        let key = MacaroonKey::generate(b"key");
+        let mut macaroon = Macaroon::create(Some("http://example.org/"), &key, "keyid").unwrap();
+        let predicate = "x".repeat(MAX_V1_PREDICATE);
+        macaroon.add_first_party_caveat(predicate.as_str()).unwrap();
+        let serialized = macaroon.serialize(crate::Format::V1).unwrap();
+        let deserialized = Macaroon::deserialize(&serialized).unwrap();
+        assert_eq!(macaroon, deserialized);
+
+        let mut oversized = Macaroon::create(Some("http://example.org/"), &key, "keyid").unwrap();
+        oversized
+            .add_first_party_caveat("x".repeat(MAX_V1_PREDICATE + 1).as_str())
+            .unwrap();
+        let err = oversized.serialize(crate::Format::V1).unwrap_err();
+        assert!(matches!(err, crate::MacaroonError::FieldTooLarge { .. }));
+        // ...while V2 serializes it fine
+        assert!(oversized.serialize(crate::Format::V2).is_ok());
+    }
+
+    #[test]
+    fn test_packet_after_signature_rejected() {
+        let key = MacaroonKey::generate(b"key");
+        let mut macaroon = Macaroon::create(Some("http://example.org/"), &key, "keyid").unwrap();
+        macaroon.add_first_party_caveat("a = b").unwrap();
+        let mut binary = super::serialize_binary(&macaroon).unwrap();
+        assert!(super::deserialize(&binary).is_ok());
+        binary.extend(super::serialize_as_packet(super::CID, b"dropped = caveat").unwrap());
+        let err = super::deserialize(&binary).unwrap_err();
+        assert!(err.to_string().contains("after signature"), "{}", err);
+    }
+
+    #[test]
+    fn test_duplicate_packets_rejected() {
+        let key = MacaroonKey::generate(b"key");
+        let macaroon = Macaroon::create(Some("http://example.org/"), &key, "keyid").unwrap();
+        let binary = super::serialize_binary(&macaroon).unwrap();
+
+        // duplicate location / identifier before the rest of the token
+        for tag in [super::LOCATION, super::IDENTIFIER] {
+            let mut dup = super::serialize_as_packet(tag, b"http://example.org/").unwrap();
+            dup.extend(&binary);
+            let err = super::deserialize(&dup).unwrap_err();
+            assert!(err.to_string().contains("duplicate"), "{}", err);
+        }
+
+        // duplicate vid / cl within a caveat
+        for tag in [super::VID, super::CL] {
+            let mut dup: Vec<u8> = Vec::new();
+            dup.extend(super::serialize_as_packet(super::IDENTIFIER, b"keyid").unwrap());
+            dup.extend(super::serialize_as_packet(super::CID, b"third-party-id").unwrap());
+            dup.extend(super::serialize_as_packet(super::VID, b"vid-bytes").unwrap());
+            dup.extend(super::serialize_as_packet(super::CL, b"http://auth/").unwrap());
+            dup.extend(super::serialize_as_packet(tag, b"second-copy").unwrap());
+            dup.extend(super::serialize_as_packet(super::SIGNATURE, &[7u8; 32]).unwrap());
+            let err = super::deserialize(&dup).unwrap_err();
+            assert!(err.to_string().contains("duplicate"), "{}", err);
+        }
     }
 
     #[test]

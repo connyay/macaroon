@@ -2,13 +2,20 @@ use crate::caveat;
 use crate::caveat::CaveatBuilder;
 use crate::error::MacaroonError;
 use crate::serialization::macaroon_builder::MacaroonBuilder;
-use crate::{base64_decode_flexible, ByteString, Macaroon, Result, URL_SAFE_NO_PAD};
+use crate::{
+    base64_decode_flexible, check_field_size, ByteString, Macaroon, Result, URL_SAFE_NO_PAD,
+};
 use base64::Engine as _;
 use serde::{Deserialize, Serialize};
 use serde_json;
 use std::str;
 
+// `deny_unknown_fields` keeps V2JSON as canonical as the binary formats:
+// without it, arbitrary (and unbounded — the field caps only apply to
+// fields we model) junk rides along in a token, giving one macaroon many
+// byte representations. Serde already rejects duplicate keys.
 #[derive(Debug, Default, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
 struct Caveat {
     i: Option<String>,
     i64: Option<ByteString>,
@@ -19,6 +26,7 @@ struct Caveat {
 }
 
 #[derive(Debug, Default, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
 struct Serialization {
     v: u8,
     i: Option<String>,
@@ -98,7 +106,9 @@ impl Macaroon {
         reject_both(&ser.s, &ser.s64, "s and s64")?;
 
         let mut builder: MacaroonBuilder = MacaroonBuilder::new();
-        builder.set_identifier(match ser.i {
+        // V1/V2 enforce the field size cap while parsing; mirror it here so
+        // the cap holds regardless of which format a token arrives in.
+        let identifier: ByteString = match ser.i {
             Some(id) => id.into(),
             None => match ser.i64 {
                 Some(id) => id,
@@ -109,17 +119,21 @@ impl Macaroon {
                     )))
                 }
             },
-        });
-
-        match ser.l {
-            Some(loc) => builder.set_location(&loc),
-            None => {
-                if let Some(loc) = ser.l64 {
-                    builder
-                        .set_location(&String::from_utf8(base64_decode_flexible(loc.as_bytes())?)?)
-                }
-            }
         };
+        check_field_size("identifier", identifier.0.len())?;
+        builder.set_identifier(identifier);
+
+        let location: Option<String> = match ser.l {
+            Some(loc) => Some(loc),
+            None => match ser.l64 {
+                Some(loc) => Some(String::from_utf8(base64_decode_flexible(loc.as_bytes())?)?),
+                None => None,
+            },
+        };
+        if let Some(loc) = location {
+            check_field_size("location", loc.len())?;
+            builder.set_location(&loc);
+        }
 
         let raw_sig = match ser.s {
             Some(sig) => sig,
@@ -150,7 +164,7 @@ impl Macaroon {
             reject_both(&c.l, &c.l64, "caveat l and l64")?;
             reject_both(&c.v, &c.v64, "caveat v and v64")?;
 
-            caveat_builder.add_id(match c.i {
+            let caveat_id: ByteString = match c.i {
                 Some(id) => id.into(),
                 None => match c.i64 {
                     Some(id64) => id64,
@@ -160,25 +174,32 @@ impl Macaroon {
                         )))
                     }
                 },
-            });
-            match c.l {
-                Some(loc) => caveat_builder.add_location(loc),
-                None => {
-                    if let Some(loc64) = c.l64 {
-                        caveat_builder.add_location(String::from_utf8(base64_decode_flexible(
-                            loc64.as_bytes(),
-                        )?)?)
-                    }
-                }
             };
-            match c.v {
-                Some(vid) => caveat_builder.add_verifier_id(vid.into()),
-                None => {
-                    if let Some(vid64) = c.v64 {
-                        caveat_builder.add_verifier_id(vid64)
-                    }
-                }
+            check_field_size("caveat id", caveat_id.0.len())?;
+            caveat_builder.add_id(caveat_id);
+
+            let caveat_location: Option<String> = match c.l {
+                Some(loc) => Some(loc),
+                None => match c.l64 {
+                    Some(loc64) => Some(String::from_utf8(base64_decode_flexible(
+                        loc64.as_bytes(),
+                    )?)?),
+                    None => None,
+                },
             };
+            if let Some(loc) = caveat_location {
+                check_field_size("caveat location", loc.len())?;
+                caveat_builder.add_location(loc);
+            }
+
+            let verifier_id: Option<ByteString> = match c.v {
+                Some(vid) => Some(vid.into()),
+                None => c.v64,
+            };
+            if let Some(vid) = verifier_id {
+                check_field_size("caveat vid", vid.0.len())?;
+                caveat_builder.add_verifier_id(vid);
+            }
             builder.add_caveat(caveat_builder.build()?)?;
             caveat_builder = CaveatBuilder::new();
         }
@@ -254,6 +275,83 @@ mod tests {
             r#"{"v":1,"i":"keyid","c":[],"s64":"S-lnzR6gxrJrr2pKlO6bBbFYhtoLqF6MQqk8jQ4SXvw"}"#;
         let err = Macaroon::deserialize(bad).unwrap_err();
         assert!(matches!(err, crate::MacaroonError::DeserializationError(_)));
+    }
+
+    #[test]
+    fn test_reject_unknown_fields() {
+        // Unknown keys are unbounded payload the field caps never see, and
+        // they let one macaroon have many byte representations.
+        let sig64 = "S-lnzR6gxrJrr2pKlO6bBbFYhtoLqF6MQqk8jQ4SXvw";
+
+        let top_level = format!(
+            r#"{{"v":2,"i":"keyid","zzz":"junk","c":[],"s64":"{}"}}"#,
+            sig64
+        );
+        let err = Macaroon::deserialize(&top_level).unwrap_err();
+        assert!(err.to_string().contains("unknown field"), "{}", err);
+
+        let in_caveat = format!(
+            r#"{{"v":2,"i":"keyid","c":[{{"i":"a = b","zzz":"junk"}}],"s64":"{}"}}"#,
+            sig64
+        );
+        let err = Macaroon::deserialize(&in_caveat).unwrap_err();
+        assert!(err.to_string().contains("unknown field"), "{}", err);
+
+        // duplicate keys are rejected too (serde, not `deny_unknown_fields`)
+        let dup = format!(
+            r#"{{"v":2,"i":"first","i":"second","c":[],"s64":"{}"}}"#,
+            sig64
+        );
+        let err = Macaroon::deserialize(&dup).unwrap_err();
+        assert!(err.to_string().contains("duplicate field"), "{}", err);
+    }
+
+    #[test]
+    fn test_reject_oversized_fields() {
+        // V2JSON must enforce MAX_FIELD_SIZE_BYTES like the binary formats.
+        let sig64 = "S-lnzR6gxrJrr2pKlO6bBbFYhtoLqF6MQqk8jQ4SXvw";
+        let huge = "A".repeat(crate::MAX_FIELD_SIZE_BYTES + 1);
+
+        let bad_id = format!(r#"{{"v":2,"i":"{}","c":[],"s64":"{}"}}"#, huge, sig64);
+        assert!(matches!(
+            Macaroon::deserialize(&bad_id).unwrap_err(),
+            crate::MacaroonError::FieldTooLarge {
+                field: "identifier",
+                ..
+            }
+        ));
+
+        let bad_loc = format!(
+            r#"{{"v":2,"i":"keyid","l":"{}","c":[],"s64":"{}"}}"#,
+            huge, sig64
+        );
+        assert!(matches!(
+            Macaroon::deserialize(&bad_loc).unwrap_err(),
+            crate::MacaroonError::FieldTooLarge {
+                field: "location",
+                ..
+            }
+        ));
+
+        let bad_cav = format!(
+            r#"{{"v":2,"i":"keyid","c":[{{"i":"{}"}}],"s64":"{}"}}"#,
+            huge, sig64
+        );
+        assert!(matches!(
+            Macaroon::deserialize(&bad_cav).unwrap_err(),
+            crate::MacaroonError::FieldTooLarge {
+                field: "caveat id",
+                ..
+            }
+        ));
+
+        // at exactly the cap, the token parses
+        let ok_id = format!(
+            r#"{{"v":2,"i":"{}","c":[],"s64":"{}"}}"#,
+            "A".repeat(crate::MAX_FIELD_SIZE_BYTES),
+            sig64
+        );
+        assert!(Macaroon::deserialize(&ok_id).is_ok());
     }
 
     #[test]

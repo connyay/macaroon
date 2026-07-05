@@ -1,5 +1,36 @@
 # libmacaroon Change Log
 
+## Unreleased
+
+Hardening from a code-review pass over the serializers. No wire-format
+changes for well-formed tokens; all fixes reject inputs or outputs that
+were previously mishandled.
+
+- **V1 serializer no longer emits corrupt tokens for near-cap fields.**
+  The four-hex-digit packet header silently wrapped past `0xFFFF` when a
+  field plus packet overhead exceeded the V1 packet limit (e.g. a
+  65,530-byte predicate), producing a token that failed to parse.
+  Serialization now returns `FieldTooLarge` instead. Fields up to the V1
+  per-tag maximum (65,526 bytes for a predicate — pymacaroons' limit)
+  still round-trip; V2/V2JSON serialize anything up to
+  `MAX_FIELD_SIZE_BYTES` as before.
+- **V2JSON deserialization now enforces `MAX_FIELD_SIZE_BYTES`.** The
+  binary V1/V2 parsers applied the cap; the JSON parser did not, so a
+  token with (say) a 1 MB identifier was accepted. All fields
+  (identifier, location, caveat id/location/vid) are now checked.
+- **Parsers reject non-canonical encodings** so a given macaroon has one
+  byte representation and cannot carry hidden trailing payload:
+  - V2: trailing data after the signature field is rejected, and
+    varint field sizes must be minimally encoded (`80 00` no longer
+    decodes as 0).
+  - V1: packets after the signature packet are rejected (previously
+    silently dropped), as are duplicate `location`/`identifier`/
+    `signature` packets and duplicate `vid`/`cl` within a caveat.
+
+  None of these were authentication bypasses — the signature covers the
+  logical content — but they allowed cache-key confusion and parse
+  differentials between implementations.
+
 ## Version 0.2.1 - 2026-04-27 (libmacaroon)
 
 More dogfooding feedback, this time about binary size: the V2JSON

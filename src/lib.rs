@@ -137,11 +137,15 @@ pub const MAX_CAVEATS: usize = 1000;
 /// Maximum byte length accepted for any single field (identifier, location,
 /// predicate, VID, signature) during construction and deserialization.
 ///
-/// Bounds memory and parsing work on untrusted input, and ensures the V1
-/// packet format (whose size header is four hex digits, capping a packet at
-/// `0xFFFF` bytes) can represent every macaroon this crate produces. The cap
-/// applies symmetrically: a macaroon that this crate can serialize is always
-/// one this crate can parse back.
+/// Bounds memory and parsing work on untrusted input. All three formats
+/// enforce it when deserializing, and V2/V2JSON can serialize any field up
+/// to the cap. The V1 packet format is slightly tighter: a packet is
+/// `4 (hex size header) + tag + 1 (space) + value + 1 (newline)` bytes with
+/// a `0xFFFF` maximum, so a field within `tag length + 6` bytes of this cap
+/// (e.g. an identifier over 65519 bytes, or a predicate over 65526 —
+/// the most any V1 implementation can represent) fails V1 serialization
+/// with [`MacaroonError::FieldTooLarge`] rather than being silently
+/// truncated.
 pub const MAX_FIELD_SIZE_BYTES: usize = 65535;
 
 pub(crate) fn check_field_size(field: &'static str, size: usize) -> Result<()> {

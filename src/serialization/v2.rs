@@ -120,6 +120,14 @@ impl<'r> Deserializer<'r> {
             if byte & 128 != 0 {
                 size |= ((byte & 127) as usize) << shift;
             } else {
+                // A zero terminal byte after a continuation byte encodes the
+                // same value in more bytes (e.g. `80 00` for 0). Reject it so
+                // every field size has exactly one encoding.
+                if byte == 0 && shift > 0 {
+                    return Err(MacaroonError::DeserializationError(String::from(
+                        "non-canonical field size",
+                    )));
+                }
                 size |= (byte as usize) << shift;
                 check_field_size("v2 field", size)?;
                 return Ok(size);
@@ -129,6 +137,10 @@ impl<'r> Deserializer<'r> {
         Err(MacaroonError::DeserializationError(String::from(
             "Error in field size",
         )))
+    }
+
+    fn is_exhausted(&self) -> bool {
+        self.index >= self.data.len()
     }
 }
 
@@ -229,6 +241,13 @@ pub fn deserialize(data: &[u8]) -> Result<Macaroon> {
     } else {
         return Err(MacaroonError::DeserializationError(
             "Unexpected tag found".into(),
+        ));
+    }
+    // The signature is the final field; trailing bytes would be silently
+    // ignored otherwise, letting one token have many byte representations.
+    if !deserializer.is_exhausted() {
+        return Err(MacaroonError::DeserializationError(
+            "trailing data after signature".into(),
         ));
     }
     builder.build()
@@ -332,6 +351,38 @@ mod tests {
             _ => String::default(),
         };
         assert_eq!("https://auth.mybank.com", location);
+    }
+
+    #[test]
+    fn test_trailing_data_rejected() {
+        let key = MacaroonKey::generate(b"key");
+        let mut macaroon = Macaroon::create(Some("http://example.org/"), &key, "keyid").unwrap();
+        macaroon.add_first_party_caveat("a = b").unwrap();
+        let mut binary = super::serialize_binary(&macaroon).unwrap();
+        assert!(super::deserialize(&binary).is_ok());
+        binary.push(0);
+        let err = super::deserialize(&binary).unwrap_err();
+        assert!(err.to_string().contains("trailing data"), "{}", err);
+    }
+
+    #[test]
+    fn test_non_canonical_varint_rejected() {
+        // version, identifier tag, varint(5), "keyid", EOS, EOS,
+        // signature tag, varint(32), 32 signature bytes
+        let mut canonical: Vec<u8> = vec![2, 2, 0x05];
+        canonical.extend(b"keyid");
+        canonical.extend([0, 0, 6, 0x20]);
+        canonical.extend([7u8; 32]);
+        assert!(super::deserialize(&canonical).is_ok());
+
+        // same token with the identifier length encoded as `85 00`
+        // (5 | continuation bit, then a zero terminal byte)
+        let mut padded: Vec<u8> = vec![2, 2, 0x85, 0x00];
+        padded.extend(b"keyid");
+        padded.extend([0, 0, 6, 0x20]);
+        padded.extend([7u8; 32]);
+        let err = super::deserialize(&padded).unwrap_err();
+        assert!(err.to_string().contains("non-canonical"), "{}", err);
     }
 
     #[test]
