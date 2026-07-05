@@ -2,11 +2,17 @@
 
 ## Unreleased
 
+### Dependencies and toolchain
+
 - **`getrandom` bumped from 0.2 to 0.4.** The `wasm` feature now enables
   `getrandom/wasm_js` (renamed from `getrandom/js`); no source change is
   needed for consumers since the feature name is internal to this
   crate's `Cargo.toml`. `getrandom` 0.4 requires Edition 2024, which
   raises this crate's MSRV from 1.71 to **1.85**.
+- **The crate moved to Edition 2024**, now that the MSRV allows it. No
+  API change.
+
+### Serializer hardening
 
 Hardening from a code-review pass over the serializers. No wire-format
 changes for well-formed tokens; all fixes reject inputs or outputs that
@@ -32,6 +38,10 @@ were previously mishandled.
   - V1: packets after the signature packet are rejected (previously
     silently dropped), as are duplicate `location`/`identifier`/
     `signature` packets and duplicate `vid`/`cl` within a caveat.
+  - V2JSON: unknown JSON keys are rejected. They were previously
+    ignored, so a token could carry arbitrary — and unbounded, since
+    the field caps only cover modelled fields — extra payload.
+    (Duplicate keys were already rejected by `serde`.)
 
   None of these were authentication bypasses — the signature covers the
   logical content — but they allowed cache-key confusion and parse

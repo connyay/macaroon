@@ -1,6 +1,6 @@
 use crate::caveat::Caveat;
 use crate::error::MacaroonError;
-use crate::{ByteString, Macaroon, MacaroonKey, Result, MAX_CAVEATS};
+use crate::{ByteString, MAX_CAVEATS, Macaroon, MacaroonKey, Result};
 
 pub(crate) struct MacaroonBuilder {
     identifier: ByteString,

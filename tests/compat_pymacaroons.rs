@@ -1,8 +1,7 @@
 /// https://github.com/ecordell/pymacaroons/blob/master/tests/functional_tests/functional_tests.py
 use base64::{
-    alphabet,
+    Engine as _, alphabet,
     engine::{DecodePaddingMode, GeneralPurpose, GeneralPurposeConfig},
-    Engine as _,
 };
 use libmacaroon::{Format, Macaroon, MacaroonError, MacaroonKey};
 

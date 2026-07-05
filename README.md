@@ -274,9 +274,9 @@ same backend works for both native and WASM targets.
 
 ## Minimum Supported Rust Version
 
-This crate targets Rust Language 2021 Edition and builds on stable Rust
-1.85 (Feb 2025) and later — the floor set by `getrandom` 0.4, which
-requires Edition 2024 to compile. The library build (`cargo build`) is
+This crate targets Rust Language 2024 Edition and builds on stable Rust
+1.85 (Feb 2025) and later — the floor set by Edition 2024, which
+`getrandom` 0.4 also requires. The library build (`cargo build`) is
 the contract; `cargo test` pulls in dev-dep transitives that require
 newer editions and isn't part of the MSRV guarantee.
 

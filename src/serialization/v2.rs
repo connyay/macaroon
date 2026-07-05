@@ -1,7 +1,7 @@
 use crate::caveat::{Caveat, CaveatBuilder};
 use crate::error::MacaroonError;
 use crate::serialization::macaroon_builder::MacaroonBuilder;
-use crate::{check_field_size, ByteString, Macaroon, Result, URL_SAFE};
+use crate::{ByteString, Macaroon, Result, URL_SAFE, check_field_size};
 use base64::Engine as _;
 
 // Version 2 fields
@@ -160,7 +160,7 @@ pub fn deserialize(data: &[u8]) -> Result<Macaroon> {
         _ => {
             return Err(MacaroonError::DeserializationError(String::from(
                 "Identifier not found",
-            )))
+            )));
         }
     }
     if builder.has_location() {
@@ -173,7 +173,7 @@ pub fn deserialize(data: &[u8]) -> Result<Macaroon> {
                 return Err(MacaroonError::DeserializationError(String::from(
                     "Identifier not \
                      found",
-                )))
+                )));
             }
         }
     }
@@ -191,7 +191,7 @@ pub fn deserialize(data: &[u8]) -> Result<Macaroon> {
                 return Err(MacaroonError::DeserializationError(String::from(
                     "Caveat identifier \
                      not found",
-                )))
+                )));
             }
         }
         if caveat_builder.has_location() {
@@ -205,7 +205,7 @@ pub fn deserialize(data: &[u8]) -> Result<Macaroon> {
                     return Err(MacaroonError::DeserializationError(String::from(
                         "Caveat identifier \
                          not found",
-                    )))
+                    )));
                 }
             }
         }
@@ -225,7 +225,7 @@ pub fn deserialize(data: &[u8]) -> Result<Macaroon> {
             _ => {
                 return Err(MacaroonError::DeserializationError(
                     "Unexpected caveat tag found".into(),
-                ))
+                ));
             }
         }
     }

@@ -1,7 +1,7 @@
 [package]
 name = "libmacaroon"
 version = "0.2.1"
-edition = "2021"
+edition = "2024"
 rust-version = "1.85"
 authors = [
     "Connor Hindley <conn.hindley@gmail.com>",

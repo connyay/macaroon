@@ -1,7 +1,7 @@
-use crate::crypto;
-use crate::error::MacaroonError;
 use crate::ByteString;
 use crate::Result;
+use crate::crypto;
+use crate::error::MacaroonError;
 use crypto::MacaroonKey;
 use std::fmt::Debug;
 

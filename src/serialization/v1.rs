@@ -1,7 +1,7 @@
 use crate::caveat::{Caveat, CaveatBuilder};
 use crate::error::MacaroonError;
 use crate::serialization::macaroon_builder::MacaroonBuilder;
-use crate::{check_field_size, ByteString, Macaroon, Result, URL_SAFE};
+use crate::{ByteString, Macaroon, Result, URL_SAFE, check_field_size};
 use base64::Engine as _;
 use log::error;
 use std::str;
@@ -216,7 +216,7 @@ pub fn deserialize(data: &[u8]) -> Result<Macaroon> {
             _ => {
                 return Err(MacaroonError::DeserializationError(String::from(
                     "Unknown key",
-                )))
+                )));
             }
         };
     }

@@ -4,11 +4,11 @@
 //! compatible with WebAssembly and other constrained environments.
 
 use super::MacaroonKey;
-use crate::error::MacaroonError;
 use crate::Result;
+use crate::error::MacaroonError;
 use crypto_secretbox::{
-    aead::{Aead, KeyInit},
     Key as AeadKey, Nonce, XSalsa20Poly1305,
+    aead::{Aead, KeyInit},
 };
 use hmac::{Hmac, Mac};
 use log::error;

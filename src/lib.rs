@@ -81,9 +81,8 @@
 //! - serialization and deserialization of caveats via version 1, 2 or 2J serialization formats (fully compatible with libmacaroons)
 
 use base64::{
-    alphabet,
+    Engine as _, alphabet,
     engine::{DecodePaddingMode, GeneralPurpose, GeneralPurposeConfig},
-    Engine as _,
 };
 use log::debug;
 
@@ -525,7 +524,7 @@ impl Macaroon {
             '{' => {
                 return Err(MacaroonError::DeserializationError(
                     "V2JSON support is disabled (the `v2json` feature is not enabled)".to_string(),
-                ))
+                ));
             }
             _ => {
                 let binary = base64_decode_flexible(token.as_ref())?;
@@ -556,7 +555,7 @@ impl Macaroon {
             _ => {
                 return Err(MacaroonError::DeserializationError(
                     "unknown macaroon serialization format".to_string(),
-                ))
+                ));
             }
         };
         mac.validate()
@@ -708,7 +707,7 @@ mod test_readme {
     macro_rules! external_doc_test {
         ($x:expr) => {
             #[doc = $x]
-            extern "C" {}
+            unsafe extern "C" {}
         };
     }
 

@@ -3,7 +3,7 @@ use crate::caveat::CaveatBuilder;
 use crate::error::MacaroonError;
 use crate::serialization::macaroon_builder::MacaroonBuilder;
 use crate::{
-    base64_decode_flexible, check_field_size, ByteString, Macaroon, Result, URL_SAFE_NO_PAD,
+    ByteString, Macaroon, Result, URL_SAFE_NO_PAD, base64_decode_flexible, check_field_size,
 };
 use base64::Engine as _;
 use serde::{Deserialize, Serialize};
@@ -116,7 +116,7 @@ impl Macaroon {
                     return Err(MacaroonError::DeserializationError(String::from(
                         "No identifier \
                          found",
-                    )))
+                    )));
                 }
             },
         };
@@ -142,7 +142,7 @@ impl Macaroon {
                 None => {
                     return Err(MacaroonError::DeserializationError(
                         "No signature found".into(),
-                    ))
+                    ));
                 }
             },
         };
@@ -171,7 +171,7 @@ impl Macaroon {
                     None => {
                         return Err(MacaroonError::DeserializationError(String::from(
                             "No caveat ID found",
-                        )))
+                        )));
                     }
                 },
             };
