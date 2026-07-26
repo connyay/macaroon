@@ -1,6 +1,6 @@
 # libmacaroon Change Log
 
-## Unreleased
+## Version 0.3.0 - 2026-07-26 (libmacaroon)
 
 ### Dependencies and toolchain
 
